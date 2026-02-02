@@ -12,6 +12,7 @@ dependencies = [
     "pytesseract>=0.3.10",
     "pdf2image>=1.16.0",
     "Pillow>=10.0.0",
+    "flask>=3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -22,6 +23,7 @@ dev = [
 
 [project.scripts]
 pdf-classifier = "pdf_classifier.main:main"
+pdf-classifier-web = "pdf_classifier.app:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

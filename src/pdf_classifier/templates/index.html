@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF Document Classifier</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f5f7fa; color: #1a1a2e; line-height: 1.5; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1rem; }
+  h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+  .subtitle { color: #666; margin-bottom: 2rem; font-size: 0.95rem; }
+
+  /* Upload area */
+  .upload-area { border: 2px dashed #cbd5e1; border-radius: 12px; padding: 3rem 2rem; text-align: center; background: #fff; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
+  .upload-area:hover, .upload-area.dragover { border-color: #3b82f6; background: #eff6ff; }
+  .upload-area svg { width: 48px; height: 48px; color: #94a3b8; margin-bottom: 1rem; }
+  .upload-area.dragover svg { color: #3b82f6; }
+  .upload-area p { color: #64748b; margin-bottom: 0.5rem; }
+  .upload-area .browse { color: #3b82f6; font-weight: 600; text-decoration: underline; cursor: pointer; }
+  .upload-area .file-info { margin-top: 0.75rem; font-size: 0.85rem; color: #475569; display: none; }
+  .upload-area .file-info.visible { display: block; }
+  #file-input { display: none; }
+
+  /* Buttons */
+  .btn-row { margin-top: 1.5rem; display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+  .btn { padding: 0.65rem 1.5rem; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: #3b82f6; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #2563eb; }
+  .btn-secondary { background: #e2e8f0; color: #334155; }
+  .btn-secondary:hover:not(:disabled) { background: #cbd5e1; }
+
+  /* Progress */
+  .progress-bar { display: none; margin-top: 1.5rem; }
+  .progress-bar.visible { display: block; }
+  .progress-track { height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; background: #3b82f6; border-radius: 3px; transition: width 0.3s; width: 0%; }
+  .progress-text { font-size: 0.85rem; color: #64748b; margin-top: 0.5rem; text-align: center; }
+
+  /* Results */
+  .results { display: none; margin-top: 2rem; }
+  .results.visible { display: block; }
+  .card { background: #fff; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .card h2 { font-size: 1.15rem; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e2e8f0; }
+  .card h3 { font-size: 0.95rem; margin: 1rem 0 0.5rem; color: #475569; }
+
+  /* Summary grid */
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+  .summary-item { background: #f8fafc; border-radius: 8px; padding: 1rem; }
+  .summary-item .label { font-size: 0.8rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+  .summary-item .value { font-size: 1.5rem; font-weight: 700; color: #1e293b; }
+  .summary-item .detail { font-size: 0.8rem; color: #94a3b8; margin-top: 0.25rem; }
+
+  /* Stats bars */
+  .stat-row { display: flex; align-items: center; margin-bottom: 0.5rem; }
+  .stat-label { width: 280px; font-size: 0.85rem; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+  .stat-bar-bg { flex: 1; height: 20px; background: #f1f5f9; border-radius: 4px; margin: 0 0.75rem; overflow: hidden; min-width: 60px; }
+  .stat-bar { height: 100%; border-radius: 4px; transition: width 0.4s; }
+  .stat-count { width: 30px; font-size: 0.85rem; font-weight: 600; color: #334155; text-align: right; flex-shrink: 0; }
+
+  /* Page table */
+  .page-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .page-table th { text-align: left; padding: 0.6rem 0.75rem; background: #f8fafc; color: #475569; font-weight: 600; border-bottom: 2px solid #e2e8f0; white-space: nowrap; }
+  .page-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #f1f5f9; }
+  .page-table tr:hover td { background: #f8fafc; }
+  .table-wrap { overflow-x: auto; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+  .badge-high { background: #fee2e2; color: #991b1b; }
+  .badge-mid { background: #fef3c7; color: #92400e; }
+  .badge-low { background: #e0f2fe; color: #075985; }
+  .badge-primary { background: #dcfce7; color: #166534; }
+  .badge-secondary { background: #f3e8ff; color: #6b21a8; }
+  .badge-review { background: #fff1f2; color: #be123c; }
+
+  /* Error */
+  .error-msg { display: none; margin-top: 1rem; padding: 1rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #991b1b; font-size: 0.9rem; }
+  .error-msg.visible { display: block; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>PDF Document Classifier</h1>
+  <p class="subtitle">Medicolegal enclosure page-level classification</p>
+
+  <!-- Upload -->
+  <div class="upload-area" id="drop-zone">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+    <p>Drag &amp; drop a PDF here, or <span class="browse" id="browse-btn">browse</span></p>
+    <p style="font-size:0.8rem; color:#94a3b8;">Max file size: 50 MB</p>
+    <div class="file-info" id="file-info"></div>
+    <input type="file" id="file-input" accept=".pdf,application/pdf">
+  </div>
+
+  <div class="btn-row">
+    <button class="btn btn-primary" id="btn-classify" disabled>Classify &amp; Process</button>
+    <button class="btn btn-secondary" id="btn-classify-only" disabled>Classify Only</button>
+  </div>
+
+  <div class="progress-bar" id="progress-bar">
+    <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+    <div class="progress-text" id="progress-text">Uploading and classifying...</div>
+  </div>
+
+  <div class="error-msg" id="error-msg"></div>
+
+  <!-- Results -->
+  <div class="results" id="results">
+
+    <div class="card">
+      <h2>Summary</h2>
+      <div class="summary-grid">
+        <div class="summary-item"><div class="label">Total Pages</div><div class="value" id="s-total">-</div></div>
+        <div class="summary-item"><div class="label">Document Types</div><div class="value" id="s-types">-</div></div>
+        <div class="summary-item"><div class="label">Needs Review</div><div class="value" id="s-review">-</div></div>
+        <div class="summary-item"><div class="label">File</div><div class="value" id="s-file" style="font-size:0.95rem;word-break:break-all;">-</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Classification Breakdown</h2>
+      <div id="classification-bars"></div>
+      <h3>Source Types</h3>
+      <div id="source-bars"></div>
+      <h3>Priority Levels</h3>
+      <div id="priority-bars"></div>
+    </div>
+
+    <div class="card">
+      <h2>Page-by-Page Results</h2>
+      <div class="table-wrap">
+        <table class="page-table">
+          <thead>
+            <tr><th>Page</th><th>Document Type</th><th>Category</th><th>Source</th><th>Priority</th><th>Confidence</th><th>Flags</th></tr>
+          </thead>
+          <tbody id="page-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="review-card" style="display:none;">
+      <h2>Pages Requiring Manual Review</h2>
+      <div id="review-list"></div>
+    </div>
+
+    <div class="card" id="errors-card" style="display:none;">
+      <h2>Processing Errors</h2>
+      <div id="errors-list" style="color:#991b1b; font-size:0.9rem;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const browseBtn = document.getElementById('browse-btn');
+const fileInfo = document.getElementById('file-info');
+const btnClassify = document.getElementById('btn-classify');
+const btnClassifyOnly = document.getElementById('btn-classify-only');
+const progressBar = document.getElementById('progress-bar');
+const progressFill = document.getElementById('progress-fill');
+const progressText = document.getElementById('progress-text');
+const errorMsg = document.getElementById('error-msg');
+const resultsDiv = document.getElementById('results');
+
+let selectedFile = null;
+
+// Drag and drop
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const files = e.dataTransfer.files;
+  if (files.length > 0) selectFile(files[0]);
+});
+dropZone.addEventListener('click', () => fileInput.click());
+browseBtn.addEventListener('click', e => { e.stopPropagation(); fileInput.click(); });
+fileInput.addEventListener('change', () => { if (fileInput.files.length > 0) selectFile(fileInput.files[0]); });
+
+function selectFile(file) {
+  if (!file.name.toLowerCase().endsWith('.pdf')) {
+    showError('Please select a PDF file.');
+    return;
+  }
+  if (file.size > 50 * 1024 * 1024) {
+    showError('File exceeds the 50 MB limit.');
+    return;
+  }
+  selectedFile = file;
+  const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+  fileInfo.textContent = `${file.name} (${sizeMB} MB)`;
+  fileInfo.classList.add('visible');
+  btnClassify.disabled = false;
+  btnClassifyOnly.disabled = false;
+  hideError();
+}
+
+btnClassify.addEventListener('click', () => uploadAndClassify('/api/classify'));
+btnClassifyOnly.addEventListener('click', () => uploadAndClassify('/api/classify-only'));
+
+async function uploadAndClassify(endpoint) {
+  if (!selectedFile) return;
+  btnClassify.disabled = true;
+  btnClassifyOnly.disabled = true;
+  resultsDiv.classList.remove('visible');
+  hideError();
+  showProgress('Uploading PDF...');
+
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+
+  try {
+    setProgress(30, 'Classifying pages...');
+    const resp = await fetch(endpoint, { method: 'POST', body: formData });
+    setProgress(80, 'Processing results...');
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      showError(data.error || 'Server error');
+      hideProgress();
+      btnClassify.disabled = false;
+      btnClassifyOnly.disabled = false;
+      return;
+    }
+
+    setProgress(100, 'Done');
+    setTimeout(() => { hideProgress(); renderResults(data); }, 300);
+  } catch (err) {
+    showError('Network error: ' + err.message);
+    hideProgress();
+  }
+  btnClassify.disabled = false;
+  btnClassifyOnly.disabled = false;
+}
+
+function showProgress(text) { progressBar.classList.add('visible'); progressFill.style.width = '10%'; progressText.textContent = text; }
+function setProgress(pct, text) { progressFill.style.width = pct + '%'; progressText.textContent = text; }
+function hideProgress() { progressBar.classList.remove('visible'); }
+function showError(msg) { errorMsg.textContent = msg; errorMsg.classList.add('visible'); }
+function hideError() { errorMsg.classList.remove('visible'); }
+
+const BAR_COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316','#6366f1','#84cc16','#06b6d4','#e11d48','#a855f7','#22c55e','#eab308','#64748b','#0ea5e9'];
+
+function renderBars(containerId, dataObj, colors) {
+  const el = document.getElementById(containerId);
+  const entries = Object.entries(dataObj).sort((a, b) => b[1] - a[1]);
+  const max = Math.max(...entries.map(e => e[1]), 1);
+  el.innerHTML = entries.map(([label, count], i) => {
+    const pct = (count / max) * 100;
+    const col = colors[i % colors.length];
+    return `<div class="stat-row"><span class="stat-label">${esc(label)}</span><div class="stat-bar-bg"><div class="stat-bar" style="width:${pct}%;background:${col};"></div></div><span class="stat-count">${count}</span></div>`;
+  }).join('');
+}
+
+function priorityBadge(level) {
+  const cls = level === 'High' ? 'badge-high' : level === 'Mid' ? 'badge-mid' : 'badge-low';
+  return `<span class="badge ${cls}">${esc(level)}</span>`;
+}
+
+function sourceBadge(src) {
+  const cls = src === 'Primary' ? 'badge-primary' : 'badge-secondary';
+  return `<span class="badge ${cls}">${esc(src)}</span>`;
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function renderResults(data) {
+  // Summary
+  document.getElementById('s-total').textContent = data.total_pages;
+  document.getElementById('s-types').textContent = Object.keys(data.classification_summary || {}).length;
+  document.getElementById('s-review').textContent = (data.pages_needing_review || []).length;
+  document.getElementById('s-file').textContent = data.original_filename || data.file_path;
+
+  // Bars
+  renderBars('classification-bars', data.classification_summary || {}, BAR_COLORS);
+  renderBars('source-bars', data.source_type_summary || {}, ['#10b981','#8b5cf6']);
+  renderBars('priority-bars', data.priority_summary || {}, ['#ef4444','#f59e0b','#3b82f6']);
+
+  // Page table
+  const tbody = document.getElementById('page-tbody');
+  tbody.innerHTML = (data.pages || []).map(p => {
+    const flags = (p.flags || []).map(f => {
+      if (f === 'low_confidence' || f === 'classification_error') return `<span class="badge badge-review">${esc(f)}</span>`;
+      return `<span class="badge" style="background:#f1f5f9;color:#475569;">${esc(f)}</span>`;
+    }).join(' ');
+    const review = p.needs_manual_review ? ' <span class="badge badge-review">REVIEW</span>' : '';
+    return `<tr>
+      <td>${p.page_number}</td>
+      <td>${esc(p.document_type)}${review}</td>
+      <td>${esc(p.category)}</td>
+      <td>${sourceBadge(p.source_type)}</td>
+      <td>${priorityBadge(p.priority_level)}</td>
+      <td>${(p.confidence * 100).toFixed(1)}%</td>
+      <td>${flags || '-'}</td>
+    </tr>`;
+  }).join('');
+
+  // Review section
+  const reviewCard = document.getElementById('review-card');
+  const reviewPages = data.pages_needing_review || [];
+  if (reviewPages.length > 0) {
+    reviewCard.style.display = '';
+    const reviewList = document.getElementById('review-list');
+    const reviewPagesData = (data.pages || []).filter(p => p.needs_manual_review);
+    reviewList.innerHTML = reviewPagesData.map(p =>
+      `<div style="margin-bottom:0.5rem;"><strong>Page ${p.page_number}</strong> (${esc(p.document_type)}): ${esc(p.classification_reasoning)}</div>`
+    ).join('');
+  } else {
+    reviewCard.style.display = 'none';
+  }
+
+  // Errors
+  const errorsCard = document.getElementById('errors-card');
+  if (data.processing_errors && data.processing_errors.length > 0) {
+    errorsCard.style.display = '';
+    document.getElementById('errors-list').innerHTML = data.processing_errors.map(e => `<div>${esc(e)}</div>`).join('');
+  } else {
+    errorsCard.style.display = 'none';
+  }
+
+  resultsDiv.classList.add('visible');
+}
+</script>
+</body>
+</html>
