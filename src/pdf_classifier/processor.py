@@ -310,6 +310,7 @@ _PROCESSING_ROUTES: dict[DocumentType, ProcessingFn] = {
     DocumentType.MEDICOLEGAL_REPORT: process_medicolegal_report,
     DocumentType.MEDICAL_PANEL_REPORT: process_medical_panel_report,
     DocumentType.AFFIDAVIT: process_affidavit,
+    DocumentType.TOC: process_other,
     DocumentType.OTHER: process_other,
 }
 

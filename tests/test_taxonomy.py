@@ -102,8 +102,9 @@ class TestSourceTypeDefaults:
 
     def test_all_non_other_types_categorized(self):
         all_classified = ALWAYS_SECONDARY_TYPES | DEFAULT_PRIMARY_TYPES
+        excluded = {DocumentType.OTHER, DocumentType.TOC}
         for dt in DocumentType:
-            if dt != DocumentType.OTHER:
+            if dt not in excluded:
                 assert dt in all_classified, f"{dt} not in any source set"
 
 

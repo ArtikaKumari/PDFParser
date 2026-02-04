@@ -44,6 +44,7 @@ class DocumentType(str, Enum):
     AFFIDAVIT = "Affidavit"
 
     # Fallback
+    TOC = "Table of Contents"
     OTHER = "Other"
 
 
@@ -80,6 +81,7 @@ DOCUMENT_TYPE_TO_CATEGORY: dict[DocumentType, DocumentCategory] = {
     DocumentType.MEDICOLEGAL_REPORT: DocumentCategory.LEGAL_ASSESSMENT,
     DocumentType.MEDICAL_PANEL_REPORT: DocumentCategory.LEGAL_ASSESSMENT,
     DocumentType.AFFIDAVIT: DocumentCategory.LEGAL_ASSESSMENT,
+    DocumentType.TOC: DocumentCategory.FALLBACK,
     DocumentType.OTHER: DocumentCategory.FALLBACK,
 }
 

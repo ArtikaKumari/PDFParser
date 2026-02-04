@@ -2,6 +2,11 @@
 
 Coordinates PDF extraction, classification, source typing, priority
 assignment, downstream processing, and output generation.
+
+Supports a TOC-first classification flow: if a table of contents / index
+page is detected in the PDF, the TOC entries are used to pre-classify
+pages.  Pages not covered by the TOC (or all pages when no TOC exists)
+fall back to the keyword-based classifier.
 """
 
 from __future__ import annotations
@@ -18,16 +23,34 @@ from pdf_classifier.output import export_csv, export_json, format_report
 from pdf_classifier.priority import assign_priority
 from pdf_classifier.processor import ProcessingResult, route_batch
 from pdf_classifier.source_classifier import classify_source_type
-from pdf_classifier.taxonomy import DocumentType
+from pdf_classifier.taxonomy import DocumentType, SourceType, PriorityLevel
+from pdf_classifier.toc_parser import (
+    DocumentIndex,
+    build_index_from_toc,
+    generate_index_from_classifications,
+)
 
 logger = logging.getLogger(__name__)
 
 # Pages with confidence below this threshold get flagged for manual review
 _REVIEW_THRESHOLD = 0.35
 
+# Confidence score assigned to pages classified via TOC lookup
+_TOC_GUIDED_CONFIDENCE = 0.85
+
 
 def classify_document(pdf_path: str | Path) -> DocumentResult:
     """Run the full classification pipeline on a PDF document.
+
+    The pipeline uses a TOC-first strategy:
+      1. Extract text from all pages.
+      2. Search for a Table of Contents / index page.
+      3a. If a TOC is found, use it to pre-classify pages that are covered
+          by TOC entries.  TOC pages themselves are classified as TOC type.
+      3b. Pages not covered by the TOC (or all pages when no TOC exists)
+          are classified using the keyword-based scoring engine.
+      4. Source type and priority are assigned for every page.
+      5. A synthetic document index is generated when no TOC was found.
 
     Args:
         pdf_path: Path to the PDF file.
@@ -42,10 +65,19 @@ def classify_document(pdf_path: str | Path) -> DocumentResult:
     pages: list[PageContent] = extract_all_pages(path)
     result = DocumentResult(file_path=str(path), total_pages=len(pages))
 
-    # Step 2-5: Classify each page
+    # Step 2: Attempt to find and parse a TOC
+    doc_index = build_index_from_toc(pages, len(pages))
+
+    if doc_index:
+        logger.info(
+            "TOC found (%d entries). Using TOC-guided classification.",
+            len(doc_index.entries),
+        )
+
+    # Step 3-5: Classify each page
     for page in pages:
         try:
-            classification = _classify_single_page(page)
+            classification = _classify_single_page(page, doc_index)
             result.page_classifications.append(classification)
         except Exception as exc:
             error_msg = f"Page {page.page_number}: classification failed - {exc}"
@@ -69,6 +101,18 @@ def classify_document(pdf_path: str | Path) -> DocumentResult:
                 )
             )
 
+    # Step 6: If no TOC was found, generate a synthetic index from results
+    if not doc_index:
+        page_types = [
+            (pc.page_number, pc.document_type)
+            for pc in result.page_classifications
+        ]
+        doc_index = generate_index_from_classifications(page_types)
+        logger.info(
+            "No TOC found. Generated synthetic index with %d sections.",
+            len(doc_index.entries),
+        )
+
     logger.info(
         "Classification complete: %d pages processed, %d errors",
         len(result.page_classifications),
@@ -77,18 +121,56 @@ def classify_document(pdf_path: str | Path) -> DocumentResult:
     return result
 
 
-def _classify_single_page(page: PageContent) -> PageClassification:
-    """Run the full classification pipeline on a single page."""
-    # Step 2: Classify document type
-    doc_type, confidence, type_reasoning = classify_page(page)
+def _classify_single_page(
+    page: PageContent,
+    doc_index: DocumentIndex | None = None,
+) -> PageClassification:
+    """Run the full classification pipeline on a single page.
 
-    # Step 3: Determine source type
+    If *doc_index* is provided (i.e. a TOC was found):
+      - TOC pages themselves are classified as ``DocumentType.TOC``.
+      - Pages covered by TOC entries use the mapped type from the TOC.
+      - Pages not covered by the TOC fall through to keyword classification.
+
+    Args:
+        page: Extracted page content.
+        doc_index: Optional document index built from a TOC.
+
+    Returns:
+        A fully classified PageClassification.
+    """
+    doc_type: DocumentType | None = None
+    confidence: float = 0.0
+    type_reasoning: str = ""
+
+    # --- TOC-guided classification ---
+    if doc_index and doc_index.source == "toc":
+        # Mark TOC pages
+        if doc_index.is_toc_page(page.page_number):
+            doc_type = DocumentType.TOC
+            confidence = 1.0
+            type_reasoning = "Page is a Table of Contents / index page"
+        else:
+            # Look up from TOC entries
+            toc_type = doc_index.get_type_for_page(page.page_number)
+            if toc_type is not None:
+                doc_type = toc_type
+                confidence = _TOC_GUIDED_CONFIDENCE
+                type_reasoning = (
+                    f"Classified via TOC lookup as {toc_type.value}"
+                )
+
+    # --- Fallback to keyword classifier ---
+    if doc_type is None:
+        doc_type, confidence, type_reasoning = classify_page(page)
+
+    # Source type
     source_type, source_reasoning = classify_source_type(doc_type, page)
 
-    # Step 4: Assign priority
+    # Priority
     priority = assign_priority(doc_type, source_type)
 
-    # Step 5: Build flags and determine if manual review is needed
+    # Flags
     flags: list[str] = []
     needs_review = False
 
@@ -105,6 +187,11 @@ def _classify_single_page(page: PageContent) -> PageClassification:
 
     if page.word_count < 10:
         flags.append("very_short_content")
+
+    if doc_index and doc_index.source == "toc" and doc_type != DocumentType.TOC:
+        toc_type = doc_index.get_type_for_page(page.page_number)
+        if toc_type is not None:
+            flags.append("toc_guided")
 
     reasoning = f"Type: {type_reasoning} | Source: {source_reasoning}"
 
